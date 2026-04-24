@@ -1,0 +1,5 @@
+import './components/AppEditor.js'
+import './components/CanvasView.js'
+import './components/InfoPanel.js'
+import './components/ToolPanel.js'
+import './styles/main.css'
