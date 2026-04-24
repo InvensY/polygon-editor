@@ -36,6 +36,7 @@ export class CanvasView extends HTMLElement {
           display: block;
           width: 100%;
           height: 100%;
+          position:relative;
         }
         
         .canvas-wrapper {
@@ -52,6 +53,7 @@ export class CanvasView extends HTMLElement {
           height: 100%;
           display: block;
           cursor: pointer;
+          touch-action:none;
           transition: all 0.3s ease;
         }
         
@@ -121,9 +123,15 @@ export class CanvasView extends HTMLElement {
     this.canvas = this.shadowRoot.querySelector('canvas');
     this.ctx = this.canvas.getContext('2d');
     
-    // Настраиваем размеры
-    this.resizeObserver = new ResizeObserver(() => this.onResize());
-    this.resizeObserver.observe(this.canvas);
+  // Настраиваем отслеживание изменения размера
+  this.resizeObserver = new ResizeObserver(() => {
+      this.onResize();
+  });
+  this.resizeObserver.observe(this.canvas);
+  // Отслеживаем поворот экрана на мобильных устройствах
+  window.addEventListener('orientationchange', () => {
+      setTimeout(() => this.onResize(), 50);
+  });
     
     // Добавляем слушатели событий
     this.canvas.addEventListener('mousedown', this.boundMouseDown);
@@ -154,41 +162,61 @@ export class CanvasView extends HTMLElement {
   
   // Изменение размера canvas
   onResize() {
-    const rect = this.canvas.getBoundingClientRect();
-    this.canvas.width = rect.width;
-    this.canvas.height = rect.height;
-    this.draw();
+      // Получаем реальные размеры элемента canvas (CSS размеры)
+      const rect = this.canvas.getBoundingClientRect();
+      
+      // Устанавливаем внутренние размеры canvas (пиксели)
+      // Используем Math.max, чтобы избежать нулевых размеров
+      this.canvas.width = Math.max(rect.width, 100);
+      this.canvas.height = Math.max(rect.height, 500);
+      
+      console.log(`Canvas размер: ${this.canvas.width} x ${this.canvas.height}`);
+      
+      this.draw();
   }
   
 
   //получается координаты мыши
-  getMousePosition(event) {
-    const rect = this.canvas.getBoundingClientRect();
-    const scaleX = this.canvas.width / rect.width;
-    const scaleY = this.canvas.height / rect.height;
-    
-    let clientX, clientY;
-    
-    // Проверяем тип события
-    if (event.touches && event.touches.length > 0) {
-        // Touch-событие
-        clientX = event.touches[0].clientX;
-        clientY = event.touches[0].clientY;
-    } else if (event.changedTouches && event.changedTouches.length > 0) {
-        // touchend событие (changedTouches)
-        clientX = event.changedTouches[0].clientX;
-        clientY = event.changedTouches[0].clientY;
-    } else {
-        // Mouse-событие
-        clientX = event.clientX;
-        clientY = event.clientY;
-    }
-    
-    return {
-        x: (clientX - rect.left) * scaleX,
-        y: (clientY - rect.top) * scaleY
-    };
-}
+    getMousePosition(event) {
+      // Получаем реальные размеры canvas на экране (CSS размеры)
+      const rect = this.canvas.getBoundingClientRect();
+      
+      // Получаем внутренние размеры canvas (реальные пиксели)
+      const canvasWidth = this.canvas.width;
+      const canvasHeight = this.canvas.height;
+      
+      // Вычисляем коэффициент масштабирования
+      // Если canvas.width = 800, а rect.width = 400, то scaleX = 0.5
+      const scaleX = canvasWidth / rect.width;
+      const scaleY = canvasHeight / rect.height;
+      
+      let clientX, clientY;
+      
+      // Получаем координаты касания или мыши
+      if (event.touches && event.touches.length > 0) {
+          clientX = event.touches[0].clientX;
+          clientY = event.touches[0].clientY;
+      } else if (event.changedTouches && event.changedTouches.length > 0) {
+          clientX = event.changedTouches[0].clientX;
+          clientY = event.changedTouches[0].clientY;
+      } else {
+          clientX = event.clientX;
+          clientY = event.clientY;
+      }
+      
+      // Преобразуем координаты экрана в координаты canvas
+      // Учитываем отступы canvas на странице (rect.left, rect.top)
+      const x = (clientX - rect.left) * scaleX;
+      const y = (clientY - rect.top) * scaleY;
+      
+      // Ограничиваем координаты границами canvas
+      const clampedX = Math.max(0, Math.min(canvasWidth, x));
+      const clampedY = Math.max(0, Math.min(canvasHeight, y));
+      
+      console.log(`Координаты: экран(${clientX},${clientY}) -> canvas(${clampedX},${clampedY}) | scaleX=${scaleX.toFixed(2)}, scaleY=${scaleY.toFixed(2)}`);
+      
+      return { x: clampedX, y: clampedY };
+  }
   
   // Найти полигон под курсором
   findPolygonAtPoint(point) {
@@ -332,6 +360,11 @@ export class CanvasView extends HTMLElement {
     let newPolygon = null;
     let attempts = 0;
     const maxAttempts = Math.min(50 + this.polygons.length * 10, 500);
+
+        // Убеждаемся, что canvas имеет корректные размеры
+    if (this.canvas.width < 100 || this.canvas.height < 100) {
+        this.onResize();  // принудительный ресайз
+    }
     
     do {
       newPolygon = generateRandomPolygon(this.canvas.width, this.canvas.height);
